@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 port, ver, newver = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 reject = len(sys.argv) > 4
 state = {"ver": ver, "down_until": 0, "uploaded": 0}
+import base64, os
+BASIC = bool(os.environ.get("MOCK_BASIC"))  # env MOCK_BASIC=1: device asks for Basic instead of Digest
 USER, PW, REALM, NONCE = "admin", "testpw", "2N", "abc123"
 
 
@@ -17,6 +19,7 @@ class H(BaseHTTPRequestHandler):
 
     def authed(self):
         h = self.headers.get("Authorization", "")
+        if BASIC: return h == "Basic " + base64.b64encode(f"{USER}:{PW}".encode()).decode()
         if not h.startswith("Digest "): return False
         f = dict(x.strip().split("=", 1) for x in h[7:].split(","))
         f = {k: v.strip('"') for k, v in f.items()}
@@ -41,7 +44,7 @@ class H(BaseHTTPRequestHandler):
             return self.reply({"success": True, "result": {"variant": "2N IP Verso", "swVersion": state["ver"]}})
         if not self.authed():
             return self.reply({"success": False, "error": {"code": 9, "description": "authorisation required"}}, 401,
-                              {"WWW-Authenticate": f'Digest realm="{REALM}", nonce="{NONCE}", qop="auth"'})
+                              {"WWW-Authenticate": 'Basic realm="2N"' if BASIC else f'Digest realm="{REALM}", nonce="{NONCE}", qop="auth"'})
         path = self.path.split("?")[0]
         if path == "/api/system/info":
             return self.reply({"success": True, "result": {"variant": "2N IP Verso", "swVersion": state["ver"]}})

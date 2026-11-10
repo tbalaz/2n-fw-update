@@ -12,7 +12,8 @@
 
   Runs on stock Windows PowerShell 5.1 and on PowerShell 7; nothing to install.
   Device side: Services > HTTP API > System API must be enabled and the account needs System "Control"
-  access. Authentication (digest / basic / none) is detected per device.
+  access. Authentication is detected per device: Digest (or none) works as is; Basic is refused unless
+  -AllowBasic is given, because it sends the password itself.
   Login: -Credential, or env TWON_USER / TWON_PASS, otherwise the script asks. One account per run.
   API reference: 2N HTTP API manual 5.2.1-5.2.3 (wiki.2n.com/hip/hapi/latest/en, api/firmware, apply, reject).
   HTTPS is used by default and the certificate is NOT checked (2N ships a self-signed one) unless
@@ -36,6 +37,7 @@ param(
     [pscredential]$Credential,
     [switch]$Http,               # plain HTTP instead of HTTPS
     [switch]$VerifyCertificate,  # check the device TLS certificate
+    [switch]$AllowBasic,         # permit Basic login (password readable on the wire unless TLS is verified)
     [switch]$AllowDowngrade,
     [switch]$Force,              # apply even when the device already runs this version
     [int]$Parallel = 4,
@@ -105,7 +107,14 @@ $worker = {
     function Read-Challenge($Response) {
         $c = @($Response.Headers.WwwAuthenticate)
         $pick = $c | Where-Object { $_.Scheme -eq 'Digest' } | Select-Object -First 1
-        if (-not $pick) { $pick = $c | Where-Object { $_.Scheme -eq 'Basic' } | Select-Object -First 1 }
+        if (-not $pick) {
+            $pick = $c | Where-Object { $_.Scheme -eq 'Basic' } | Select-Object -First 1
+            # Basic sends the password itself. Never answer it unasked: on an unverified connection anyone
+            # on the path could request Basic instead of Digest and read the password.
+            if ($pick -and -not $O.AllowBasic) {
+                throw 'device asks for Basic login, which sends the password readable on the wire - set the device HTTP API to Digest, or pass -AllowBasic (best together with -VerifyCertificate)'
+            }
+        }
         if (-not $pick) { return $false }
         $ctx.Scheme = $pick.Scheme; $ctx.P = @{}; $ctx.Nc = 0
         foreach ($m in [regex]::Matches([string]$pick.Parameter, '(\w+)\s*=\s*(?:"([^"]*)"|([^,\s]+))')) {
@@ -221,6 +230,7 @@ if (-not ($DryRun -or $Yes)) {
 }
 
 $opt = @{ Firmware = $fw; Cred = $Credential; Http = [bool]$Http; Verify = [bool]$VerifyCertificate
+          AllowBasic = [bool]$AllowBasic
           AllowDowngrade = [bool]$AllowDowngrade; Force = [bool]$Force; TimeoutSec = $TimeoutSec; DryRun = [bool]$DryRun }
 $queue = New-Object System.Collections.Queue (, $devices)
 $jobs = @(); $results = @{}

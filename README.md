@@ -16,6 +16,7 @@ the end and the exit code is 0 only when every device runs the new version.
 
 - Device side: Services > HTTP API > System API enabled, account with System Control access.
 - Login: `-Credential`, or env `TWON_USER` / `TWON_PASS`, otherwise the script asks.
+- Basic login is refused unless `-AllowBasic` (it sends the password itself); Digest works as is.
 - HTTPS by default, certificate not checked (2N ships a self-signed one); `-VerifyCertificate` checks it,
   `-Http` uses plain HTTP.
 - A downgrade or a device already on that version is skipped (`-AllowDowngrade`, `-Force` to override).
